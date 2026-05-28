@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local API/scraper probes and generated dumps
+/test-*
+/test_*
+/test.*
+/check_search.js
+/fetch-ps-plus.ts
+/psplus-state.json
+/typescript
