@@ -1,0 +1,6 @@
+{
+  "name": "Dealirious",
+  "description": "High-performance dashboard for tracking game deals in South Korea across Steam, PSN, and Nintendo, featuring a custom price watch and wishlist.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "WishlistGame": {
+      "title": "WishlistGame",
+      "description": "Represents a tracked game on a user's wishlist",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user who owns this tracked game" },
+        "id": { "type": "string", "description": "The unique deal ID (e.g., steam-1234)" },
+        "name": { "type": "string", "description": "Display name of the game" },
+        "price": { "type": "string", "description": "Formatted sale price string" },
+        "price_numeric": { "type": "number", "description": "Raw numeric sale price" },
+        "original_price": { "type": "string", "description": "Formatted original price string" },
+        "discount_percent": { "type": "number", "description": "Discount percentage integer" },
+        "image": { "type": "string", "description": "Cover art image URL" },
+        "platform": { "type": "string", "description": "Retail platform identifier" },
+        "url": { "type": "string", "description": "Direct store URL" },
+        "metacritic": { "type": "number", "description": "Metacritic rating score" },
+        "steam_score": { "type": "string", "description": "Steam text review descriptor" },
+        "genres": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "Array of genre tags" 
+        },
+        "createdAt": { "type": "timestamp", "description": "When the item was wishlisted" },
+        "updatedAt": { "type": "timestamp", "description": "When the item state was last synced" }
+      },
+      "required": ["userId", "id", "name", "price", "image", "platform", "url", "createdAt", "updatedAt"]
+    },
+    "UserPreferences": {
+      "title": "UserPreferences",
+      "description": "Represents the user's config settings like email alerts and language",
+      "type": "object",
+      "properties": {
+        "emailEnabled": { "type": "boolean", "description": "Whether price alerts are active" },
+        "threshold": { "type": "number", "description": "Alert price drop threshold %" },
+        "language": { "type": "string", "enum": ["en", "ko"], "description": "User's preferred UI language" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}/preferences/{preferenceId}": {
+      "schema": "UserPreferences",
+      "description": "User specific configuration flags, such as alerts."
+    },
+    "/users/{userId}/wishlist/{gameId}": {
+      "schema": "WishlistGame",
+      "description": "Subcollection housing games the user has actively wishlisted for price drops."
+    }
+  }
+}

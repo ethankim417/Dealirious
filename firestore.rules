@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isValidWishlistGame(data) {
+      return data.keys().hasAll(['userId', 'id', 'name', 'price', 'image', 'platform', 'url', 'createdAt', 'updatedAt']) &&
+             data.keys().hasAny(['price_numeric', 'original_price', 'discount_percent', 'metacritic', 'steam_score', 'genres']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.id is string && data.id.size() <= 200 &&
+             data.name is string && data.name.size() <= 300 &&
+             data.price is string && data.price.size() <= 50 &&
+             data.image is string && data.image.size() <= 1000 &&
+             data.platform is string && data.platform.size() <= 50 &&
+             data.url is string && data.url.size() <= 1000 &&
+             (data.get('price_numeric', 0) is number) &&
+             (data.get('original_price', '') is string) &&
+             (data.get('discount_percent', 0) is number) &&
+             (data.get('metacritic', 0) is number) &&
+             (data.get('steam_score', '') is string) &&
+             (data.get('genres', []) is list) &&
+             (data.get('genres', []).size() <= 20) &&
+             (data.get('genres', []).size() == 0 || data.get('genres', [])[0] is string);
+    }
+
+    function isValidPreference(data) {
+      return (data.get('emailEnabled', true) is bool) &&
+             (data.get('threshold', 20) is number) &&
+             (data.get('language', 'en') is string) &&
+             (data.get('language', 'en').size() == 2) &&
+             (data.get('updatedAt', 0) is number || data.get('updatedAt', request.time) is timestamp);
+    }
+
+    // User's Preferences
+    match /users/{userId}/preferences/{preferenceId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(preferenceId);
+      allow list: if false; // Only allow specific get queries
+      
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(preferenceId) &&
+                    isValidPreference(incoming()) &&
+                    incoming().keys().hasAll(['language']);
+
+      allow update: if (
+        isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(preferenceId) &&
+        isValidPreference(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasAny(['emailEnabled', 'threshold', 'language', 'updatedAt'])
+      );
+
+      allow delete: if false;
+    }
+
+    // User's Wishlists
+    match /users/{userId}/wishlist/{gameId} {
+      // Allow user to read only their own wishlist items
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(gameId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && request.auth.uid == userId && isValidId(userId);
+
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(gameId) &&
+                    isValidWishlistGame(incoming()) &&
+                    incoming().createdAt == request.time &&
+                    incoming().updatedAt == request.time;
+
+      allow update: if (
+        isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(gameId) &&
+        existing().userId == request.auth.uid &&
+        isValidWishlistGame(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'price', 'price_numeric', 'original_price', 'discount_percent', 'image', 'platform', 'url', 'metacritic', 'steam_score', 'genres', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(gameId) && existing().userId == request.auth.uid;
+    }
+  }
+}
