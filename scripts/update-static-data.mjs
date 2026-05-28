@@ -5,6 +5,51 @@ const ROOT = process.cwd();
 const OUT_FILE = path.join(ROOT, "public", "data", "deals.json");
 const CHEAPSHARK_BASE = "https://www.cheapshark.com/api/1.0";
 
+const CURATED_DEMO_DEALS = [
+  {
+    id: "demo-playstation-spider-man-2",
+    name: "Marvel's Spider-Man 2",
+    price: "$39.89",
+    price_numeric: 39.89,
+    original_price: "$69.99",
+    discount_percent: 43,
+    image: "https://image.api.playstation.com/vulcan/ap/rnd/202306/1219/97e9f5fa6e50b3bb63fda43acb3070a4d1e99b525d2f8f99.png",
+    metacritic: 90,
+    steam_score: "",
+    platform: "playstation",
+    url: "https://store.playstation.com/concept/10002456",
+    genres: ["Action", "Adventure", "Open World"],
+  },
+  {
+    id: "demo-playstation-god-of-war-ragnarok",
+    name: "God of War Ragnarok",
+    price: "$29.39",
+    price_numeric: 29.39,
+    original_price: "$69.99",
+    discount_percent: 58,
+    image: "https://image.api.playstation.com/vulcan/ap/rnd/202207/1210/3Jd2jT8GQ7wC5QeFQv7YxU6g.png",
+    metacritic: 94,
+    steam_score: "",
+    platform: "playstation",
+    url: "https://store.playstation.com/concept/10001850",
+    genres: ["Action", "Adventure"],
+  },
+  {
+    id: "demo-playstation-horizon-forbidden-west",
+    name: "Horizon Forbidden West",
+    price: "$19.79",
+    price_numeric: 19.79,
+    original_price: "$49.99",
+    discount_percent: 60,
+    image: "https://image.api.playstation.com/vulcan/ap/rnd/202107/3100/Sd2YrCwG5j0C8HabYKDw5U5P.png",
+    metacritic: 88,
+    steam_score: "",
+    platform: "playstation",
+    url: "https://store.playstation.com/concept/10000886",
+    genres: ["Action", "RPG", "Open World"],
+  },
+];
+
 const platformForStore = (storeName = "") => {
   const name = storeName.toLowerCase();
   if (name.includes("steam")) return "steam";
@@ -79,14 +124,14 @@ const main = async () => {
   );
 
   const seen = new Set();
-  const deals = dealPages
+  const deals = [...CURATED_DEMO_DEALS, ...dealPages
     .flat()
     .map((deal) => buildDeal(deal, storeById))
     .filter((deal) => {
       if (!deal.name || !deal.url || seen.has(deal.id)) return false;
       seen.add(deal.id);
       return deal.discount_percent >= 40;
-    })
+    })]
     .sort((a, b) => {
       const scoreA = (a.metacritic || 70) + (a.discount_percent || 0);
       const scoreB = (b.metacritic || 70) + (b.discount_percent || 0);
