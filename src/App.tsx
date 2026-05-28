@@ -541,6 +541,12 @@ export default function App() {
   const [selectedDeal, setSelectedDeal] = useState<GameDeal | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (platformFilter !== "all") {
+      setDiscountFilter(0);
+    }
+  }, [platformFilter]);
+
   const countries = [
     { code: "kr", name: t("South Korea", language), flag: "🇰🇷" },
     { code: "us", name: t("United States", language), flag: "🇺🇸" },
