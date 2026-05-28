@@ -56,6 +56,7 @@ import {
 import { onAuthStateChanged, User, deleteUser } from "firebase/auth";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { LegalModals } from "./components/LegalModals";
+import { handleStaticApiRequest } from "./lib/staticApi";
 
 enum OperationType {
   CREATE = 'create',
@@ -485,8 +486,13 @@ export default function App() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
   const API_BASE = (import.meta as any).env.VITE_API_URL || '';
+  const IS_STATIC_DEMO = !API_BASE;
 
   const fetchWithRetry = async (path: string, options: any = {}, retries: number = 2, backoff: number = 400): Promise<Response> => {
+    if (IS_STATIC_DEMO && path.startsWith("/api/")) {
+      return handleStaticApiRequest(path, options);
+    }
+
     const url = path.startsWith('http') ? path : `${API_BASE}${path}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(new Error('Timeout')), 60000); // 60s timeout

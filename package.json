@@ -4,10 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "dev": "vite --host 0.0.0.0",
+    "dev:server": "tsx server.ts",
+    "build": "vite build",
+    "build:server": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
+    "data:update": "node scripts/update-static-data.mjs",
     "lint": "tsc --noEmit --project tsconfig.json",
     "start": "node dist/server.cjs"
   },
