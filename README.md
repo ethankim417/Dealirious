@@ -38,6 +38,17 @@ Use the default Vercel project settings:
 
 The included `vercel.json` sets these values and adds an SPA rewrite.
 
+## Wishlist And Alerts
+
+On the static Vercel demo, login uses a local browser account instead of Firebase. Enter an email once and the wishlist is saved in `localStorage`, so it works without configuring Firebase Auth domains.
+
+Weekly alert settings are also saved locally. The `/api/alerts/send` Vercel function returns a demo success by default; add these environment variables in Vercel when you want real email delivery:
+
+```env
+RESEND_API_KEY=your_resend_key
+ALERT_FROM_EMAIL=Dealirious <alerts@yourdomain.com>
+```
+
 ## Optional Full API Mode
 
 The old Express backend is still available:

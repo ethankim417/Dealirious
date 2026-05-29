@@ -84,6 +84,14 @@ interface FirestoreErrorInfo {
   }
 }
 
+type AppUser = Pick<User, "uid" | "email"> & {
+  isDemo?: boolean;
+};
+
+const DEMO_USER_KEY = "dealirious_demo_user";
+const DEMO_WISHLIST_KEY = "dealirious_demo_wishlist";
+const DEMO_PREFS_KEY = "dealirious_demo_preferences";
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
@@ -179,6 +187,13 @@ const cleanTitle = (title: string) => {
   
   // Final cleanup of trailing separators
   return cleaned.replace(/[\s:/\\-]+$/g, '').trim();
+};
+
+const toGamePlatform = (platform?: string): GameDeal["platform"] => {
+  if (platform === "steam" || platform === "playstation" || platform === "epic" || platform === "ubisoft" || platform === "other") {
+    return platform;
+  }
+  return "other";
 };
 
 const generatePriceHistory = (dealId: string, originalPriceStr?: string, currentPriceStr?: string) => {
@@ -489,7 +504,7 @@ export default function App() {
   const IS_STATIC_DEMO = !API_BASE;
 
   const fetchWithRetry = async (path: string, options: any = {}, retries: number = 2, backoff: number = 400): Promise<Response> => {
-    if (IS_STATIC_DEMO && path.startsWith("/api/")) {
+    if (IS_STATIC_DEMO && path.startsWith("/api/") && path !== "/api/alerts/send") {
       return handleStaticApiRequest(path, options);
     }
 
@@ -534,7 +549,7 @@ export default function App() {
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [alertThreshold, setAlertThreshold] = useState<number>(20);
   const [lastAlertTime, setLastAlertTime] = useState<number>(0);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -547,6 +562,47 @@ export default function App() {
     }
   }, [platformFilter]);
 
+  const readDemoPrefs = () => {
+    try {
+      return JSON.parse(localStorage.getItem(DEMO_PREFS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  };
+
+  const writeDemoPrefs = (prefs: Record<string, unknown>) => {
+    localStorage.setItem(DEMO_PREFS_KEY, JSON.stringify({ ...readDemoPrefs(), ...prefs }));
+  };
+
+  const saveDemoWishlist = (items: GameDeal[]) => {
+    localStorage.setItem(DEMO_WISHLIST_KEY, JSON.stringify(items));
+  };
+
+  const loadDemoWishlist = () => {
+    try {
+      const items = JSON.parse(localStorage.getItem(DEMO_WISHLIST_KEY) || "[]");
+      return Array.isArray(items) ? items : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const createDemoUser = (email: string): AppUser => ({
+    uid: `demo-${email.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "local"}`,
+    email,
+    isDemo: true,
+  });
+
+  const persistDemoUser = (demoUser: AppUser) => {
+    localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser));
+    setUser(demoUser);
+    setWishlist(loadDemoWishlist());
+    const prefs = readDemoPrefs();
+    setAlertsEnabled(prefs.emailEnabled === true);
+    setAlertThreshold(Number(prefs.threshold) || 20);
+    setLastAlertTime(Number(prefs.lastAlertTime) || 0);
+  };
+
   const countries = [
     { code: "kr", name: t("South Korea", language), flag: "🇰🇷" },
     { code: "us", name: t("United States", language), flag: "🇺🇸" },
@@ -554,6 +610,19 @@ export default function App() {
 
   // Global Auth Observer
   useEffect(() => {
+    if (IS_STATIC_DEMO) {
+      try {
+        const savedUser = JSON.parse(localStorage.getItem(DEMO_USER_KEY) || "null");
+        if (savedUser?.email) {
+          persistDemoUser(createDemoUser(savedUser.email));
+        }
+      } catch {
+        localStorage.removeItem(DEMO_USER_KEY);
+      }
+      setIsAuthLoaded(true);
+      return;
+    }
+
     const checkConnection = async () => {
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
@@ -584,6 +653,11 @@ export default function App() {
     }
     const newState = !alertsEnabled;
     setAlertsEnabled(newState);
+
+    if (IS_STATIC_DEMO) {
+      writeDemoPrefs({ emailEnabled: newState, threshold: alertThreshold });
+      return;
+    }
     
     try {
       const docRef = doc(db, `users/${user.uid}/preferences/alerts`);
@@ -598,6 +672,10 @@ export default function App() {
   const updateAlertThreshold = async (newThreshold: number) => {
     if (!user) return;
     setAlertThreshold(newThreshold);
+    if (IS_STATIC_DEMO) {
+      writeDemoPrefs({ threshold: newThreshold });
+      return;
+    }
     try {
       const docRef = doc(db, `users/${user.uid}/preferences/alerts`);
       await setDoc(docRef, { threshold: newThreshold }, { merge: true });
@@ -619,6 +697,10 @@ export default function App() {
 
     if (user) {
       handleRefreshWishlist(true);
+      if (IS_STATIC_DEMO) {
+        writeDemoPrefs({ language: newLang, updatedAt: now });
+        return;
+      }
       try {
         const docRef = doc(db, `users/${user.uid}/preferences/alerts`);
         await setDoc(docRef, { language: newLang, updatedAt: now }, { merge: true });
@@ -630,6 +712,7 @@ export default function App() {
 
   // Global Wishlist & Preferences Firestore Sync
   useEffect(() => {
+      if (IS_STATIC_DEMO) return;
       if (!user) return;
       
       const pDoc = doc(db, `users/${user.uid}/preferences/alerts`);
@@ -767,6 +850,24 @@ export default function App() {
   const handleLogin = async () => {
     try {
       setAuthError(null);
+      if (IS_STATIC_DEMO) {
+        const savedEmail = readDemoPrefs().email;
+        const email = window.prompt(
+          "Enter the email address you want to use for this demo wishlist.",
+          typeof savedEmail === "string" ? savedEmail : ""
+        )?.trim();
+
+        if (!email) {
+          setAuthError("Sign-in cancelled. Add an email to save your Wishlist on this browser.");
+          setTimeout(() => setAuthError(null), 5000);
+          return;
+        }
+
+        const demoUser = createDemoUser(email);
+        writeDemoPrefs({ email });
+        persistDemoUser(demoUser);
+        return;
+      }
       await loginWithGoogle();
     } catch (error: any) {
       if (error.code === 'auth/popup-closed-by-user') {
@@ -776,6 +877,19 @@ export default function App() {
       }
       setTimeout(() => setAuthError(null), 5000);
     }
+  };
+
+  const handleLogout = async () => {
+    if (IS_STATIC_DEMO) {
+      localStorage.removeItem(DEMO_USER_KEY);
+      setUser(null);
+      setWishlist([]);
+      setAlertsEnabled(false);
+      setAlertThreshold(20);
+      return;
+    }
+
+    return logoutUser();
   };
 
   const addToWishlistFromSearch = async (game: any) => {
@@ -790,6 +904,27 @@ export default function App() {
         return;
       }
       setTrackingStatuses(prev => ({ ...prev, [game.id]: 'searching' }));
+      if (IS_STATIC_DEMO) {
+        const nextWishlist = [
+          ...wishlist,
+          {
+            id: game.id,
+            name: cleanTitle(game.name || "Unknown"),
+            price: game.price || "N/A",
+            price_numeric: game.price_numeric || 0,
+            original_price: game.original_price || "",
+            discount_percent: game.discount_percent || 0,
+            image: game.image || "",
+            platform: toGamePlatform(game.platform),
+            url: game.url || "",
+            metacritic: game.metacritic || 0,
+            steam_score: game.steam_score || "",
+            genres: game.genres || [],
+          }
+        ];
+        setWishlist(nextWishlist);
+        saveDemoWishlist(nextWishlist);
+      } else {
       const docRef = doc(db, `users/${user.uid}/wishlist/${game.id}`);
       await setDoc(docRef, {
           userId: user.uid,
@@ -808,6 +943,7 @@ export default function App() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
       });
+      }
       
       fetchWithRetry(`/api/wishlist/cross_platform_refresh?cc=${country}&lang=${language}`, {
           method: "POST",
@@ -949,6 +1085,12 @@ export default function App() {
     try {
       const itemsToRemove = wishlist.filter(item => item.name && aliases.includes(item.name));
       if (itemsToRemove.length === 0) return;
+      if (IS_STATIC_DEMO) {
+        const nextWishlist = wishlist.filter(item => !itemsToRemove.some(removeItem => removeItem.id === item.id));
+        setWishlist(nextWishlist);
+        saveDemoWishlist(nextWishlist);
+        return;
+      }
       const batch = writeBatch(db);
       for (const item of itemsToRemove) {
         const docRef = doc(db, `users/${user.uid}/wishlist/${item.id}`);
@@ -968,6 +1110,12 @@ export default function App() {
     const exists = wishlist.find(item => item.url === game.url);
     try {
       if (exists) {
+        if (IS_STATIC_DEMO) {
+          const nextWishlist = wishlist.filter(item => item.url !== game.url);
+          setWishlist(nextWishlist);
+          saveDemoWishlist(nextWishlist);
+          return;
+        }
         const docRef = doc(db, `users/${user.uid}/wishlist/${game.id}`);
         await deleteDoc(docRef);
       } else {
@@ -976,6 +1124,12 @@ export default function App() {
           return;
         }
         setTrackingStatuses(prev => ({ ...prev, [game.id]: 'searching' }));
+        if (IS_STATIC_DEMO) {
+          const nextWishlist = [...wishlist, game];
+          setWishlist(nextWishlist);
+          saveDemoWishlist(nextWishlist);
+          return;
+        }
         const docRef = doc(db, `users/${user.uid}/wishlist/${game.id}`);
         await setDoc(docRef, {
             userId: user.uid,
@@ -1120,6 +1274,9 @@ export default function App() {
           };
 
           try {
+            if (IS_STATIC_DEMO) {
+              continue;
+            }
             const docRef = doc(db, `users/${user.uid}/wishlist/${existing.id}`);
             await setDoc(docRef, {
               ...newWishlist[i],
@@ -1133,6 +1290,9 @@ export default function App() {
 
       if (changed) {
         setWishlist(newWishlist);
+        if (IS_STATIC_DEMO) {
+          saveDemoWishlist(newWishlist);
+        }
       }
 
       if (droppedItems.length > 0 && alertsEnabled && user.email) {
@@ -1145,6 +1305,11 @@ export default function App() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ email: user.email, items: droppedItems, lang: language })
             });
+            setLastAlertTime(now);
+            if (IS_STATIC_DEMO) {
+              writeDemoPrefs({ lastAlertTime: now });
+              return;
+            }
             // Update Firestore with new lastAlertTime
             const docRef = doc(db, `users/${user.uid}/preferences/alerts`);
             await setDoc(docRef, { lastAlertTime: now }, { merge: true });
@@ -1185,6 +1350,18 @@ export default function App() {
     if (!confirmed) return;
 
     try {
+      if (IS_STATIC_DEMO) {
+        localStorage.removeItem(DEMO_USER_KEY);
+        localStorage.removeItem(DEMO_WISHLIST_KEY);
+        localStorage.removeItem(DEMO_PREFS_KEY);
+        setUser(null);
+        setWishlist([]);
+        setAlertsEnabled(false);
+        setAlertThreshold(20);
+        setShowWishlist(false);
+        alert(t("Your account and all associated data have been permanently deleted.", language));
+        return;
+      }
       // 1. Delete all wishlist items
       const batch = writeBatch(db);
       for (const item of wishlist) {
@@ -1199,7 +1376,7 @@ export default function App() {
       await batch.commit();
       
       // 3. Delete auth account
-      await deleteUser(user);
+      await deleteUser(user as User);
 
       setUser(null);
       setWishlist([]);
@@ -1543,7 +1720,9 @@ export default function App() {
                                    </div>
                                    <p className="text-[9px] text-gray-500 leading-relaxed font-mono mb-3">
                                      {alertsEnabled 
-                                       ? t("Active. We will email you weekly with wishlist items that have dropped into severe discount thresholds.", language)
+                                       ? (IS_STATIC_DEMO
+                                          ? "Active. Demo alerts are saved locally; add RESEND_API_KEY in Vercel for real email delivery."
+                                          : t("Active. We will email you weekly with wishlist items that have dropped into severe discount thresholds.", language))
                                        : t("Offline. Automated background tracking is paused. You will not receive emails.", language)}
                                      <br/><br/>
                                      <span className="text-orange-500/80">{t("Notice: This alert service is strictly prohibited for US residents. By enabling, you confirm you are located outside the US.", language)}</span>
@@ -1612,7 +1791,7 @@ export default function App() {
                                                lang: language
                                              })
                                            });
-                                           setAuthError("Test alert dispatched!");
+                                           setAuthError(IS_STATIC_DEMO ? "Demo alert accepted. Add RESEND_API_KEY in Vercel for real email." : "Test alert dispatched!");
                                           } catch(e: any) {
                                            setAuthError(`Test alert failed: ${e.message}`);
                                           }
@@ -1630,7 +1809,7 @@ export default function App() {
                              </div>
 
                              <div className="p-1">
-                               <button onClick={logoutUser} className="w-full text-left px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 flex items-center gap-2 transition-colors mb-1">
+                               <button onClick={handleLogout} className="w-full text-left px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 flex items-center gap-2 transition-colors mb-1">
                                   <LogOut className="w-4 h-4" />
                                   <span className="font-bold uppercase tracking-wider text-[10px]">{t("Sign Out", language)}</span>
                                </button>
@@ -1647,7 +1826,7 @@ export default function App() {
                 </div>
               ) : (
                 <button 
-                  onClick={loginWithGoogle}
+                  onClick={handleLogin}
                   className="hidden sm:flex items-center gap-2 p-2.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 rounded-lg transition-all text-cyan-400 group"
                   title={t("Login with Google", language)}
                 >
@@ -2246,13 +2425,15 @@ export default function App() {
                  </div>
                  <h3 className="text-2xl font-black uppercase tracking-tighter mb-2">{t("Authentication Required", language)}</h3>
                  <p className="text-gray-500 max-w-md mx-auto text-sm font-medium mb-8 leading-relaxed">
-                   {t("Sync your wishlist natively via Google Cloud infrastructure to monitor deals cross-platform across all your personal devices.", language)}
+                   {IS_STATIC_DEMO
+                    ? "Save a demo wishlist in this browser and monitor the weekly refreshed deal feed without managing a paid backend."
+                    : t("Sync your wishlist natively via Google Cloud infrastructure to monitor deals cross-platform across all your personal devices.", language)}
                  </p>
                  <button 
-                  onClick={loginWithGoogle}
+                  onClick={handleLogin}
                   className="px-8 py-3 bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase tracking-widest text-sm rounded-lg transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)]"
                  >
-                   {t("Login with Google", language)}
+                   {IS_STATIC_DEMO ? "Start Demo Wishlist" : t("Login with Google", language)}
                  </button>
                </div>
             ) : (
